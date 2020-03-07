@@ -6,6 +6,208 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F)
+
+library(reprex)
+library(dplyr)
+library(tidyverse)
+library(readr)
+library(janitor)
+library(gt)
+library(ggplot2)
+library(rvest)
+library(scales)
+
+covid_19_confirmed <- read_csv("raw-data/confirmed.csv", na = c("undefined", "NA",""))
+covid_19_deaths <- read_csv("raw-data/deaths.csv", na = c("undefined", "NA",""))
+covid_19_recovered <- read_csv("raw-data/recovered.csv", na = c("undefined", "NA",""))
+
 ```
 
+```{r table}
+
+table_confirmed <- covid_19_confirmed %>% 
+  select(`Province/State`,`Country/Region`,`2020-03-05`) %>%
+  arrange(desc(`2020-03-05`)) %>%
+  gt() %>%
+  tab_header(title = "Confirmed cases of COVID-19 in 2020-03-05") %>%
+  tab_footnote(footnote = "Case classifications are based on WHO case definitions for COVID-19.",
+               locations = cells_title(groups = "title")) %>%
+  summary_rows(
+    columns = "2020-03-05",
+    fns = list(
+      Total = "sum")
+  )
+
+table_deaths <- covid_19_deaths %>%
+  select(`Province/State`,`Country/Region`,`2020-03-05`) %>%
+  arrange(desc(`2020-03-05`)) %>%
+  gt() %>%
+  tab_header(title = "Death cases of COVID-19 in 2020-03-05") %>%
+  tab_footnote(footnote = "Case classifications are based on WHO case definitions for COVID-19.",
+               locations = cells_title(groups = "title")) %>%
+  summary_rows(
+    columns = "2020-03-05",
+    fns = list(
+      Total = "sum")
+  )
+
+table_recovered <- covid_19_recovered %>%
+  select(`Province/State`,`Country/Region`,`2020-03-05`) %>%
+  arrange(desc(`2020-03-05`)) %>%
+  gt() %>%
+  tab_header(title = "Recovered cases of COVID-19 in 2020-03-05") %>%
+  tab_footnote(footnote = "Case classifications are based on WHO case definitions for COVID-19.",
+               locations = cells_title(groups = "title")) %>%
+  summary_rows(
+    columns = "2020-03-05",
+    fns = list(
+      Total = "sum")
+  )
+
+confirmed_sum <- sum(covid_19_confirmed$`2020-03-05`)
+deaths_sum <- sum(covid_19_deaths$`2020-03-05`)
+recovered_sum <- sum(covid_19_recovered$`2020-03-05`)
+
+current_case <- confirmed_sum-deaths_sum-recovered_sum
+
+```
+
+```{r global_death_rate}
+
+global_table_confirmed <- covid_19_confirmed %>% 
+  select(`Province/State`,`Country/Region`,`2020-03-05`)
+
+global_table_deaths <- covid_19_deaths %>%
+  select(`Province/State`,`Country/Region`,`2020-03-05`)
+
+global_table_confirmed <- global_table_confirmed %>%
+  group_by(`Country/Region`) %>%
+  summarise(sum(`2020-03-05`))
+
+global_table_deaths <- global_table_deaths %>%
+  group_by(`Country/Region`) %>%
+  summarise(sum(`2020-03-05`))
+
+global_death_rate <- global_table_confirmed %>%
+  inner_join(global_table_deaths, by=c("Country/Region")) %>%
+  rename("2020-03-05-confirm"=`sum(\`2020-03-05\`).x`,"2020-03-05-death"=`sum(\`2020-03-05\`).y`) %>%
+  filter(`2020-03-05-confirm` > 5 & `2020-03-05-death` > 0) %>%
+  mutate(rate = `2020-03-05-death`/`2020-03-05-confirm`) %>%
+  arrange(desc(rate))
+
+table_global_death_rate <- global_death_rate %>%
+  ggplot(aes(x=reorder(`Country/Region`,-`rate`),y=rate)) + 
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  ylab("Fatality Rate") +
+  xlab("Country/Region") +
+  ggtitle("Global Fatality Rate of COVID-19 \nas of March 5th, 2020, by Country/Region") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) 
+
+```
+
+```{r china_death_rate}
+
+china_table_confirmed <- covid_19_confirmed %>% 
+  filter(`Country/Region`=="Mainland China"|`Country/Region`=="Hong Kong"|`Country/Region`=="Taiwan"|`Country/Region`=="Macau") %>%
+  select(`Province/State`,`2020-03-05`)
+
+china_table_deaths <- covid_19_deaths %>% 
+  filter(`Country/Region`=="Mainland China"|`Country/Region`=="Hong Kong"|`Country/Region`=="Taiwan"|`Country/Region`=="Macau") %>%
+  select(`Province/State`,`2020-03-05`)
+
+china_death_rate <- china_table_confirmed %>%
+  inner_join(china_table_deaths, by=c("Province/State")) %>%
+  rename("2020-03-05-confirm"=`2020-03-05.x`,"2020-03-05-death"=`2020-03-05.y`) %>%
+  mutate(death_rate = `2020-03-05-death`/`2020-03-05-confirm`) %>%
+  arrange(desc(death_rate))
+
+table_china_death_rate <- china_death_rate %>%
+  ggplot(aes(x=reorder(`Province/State`,-`death_rate`),y=death_rate)) + 
+  geom_col() +
+  scale_y_continuous(labels = percent) +
+  ylab("Fatality Rate") +
+  xlab("Province") +
+  ggtitle("Fatality Rate of COVID-19 in China \nas of March 5th, 2020, by Province") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) 
+
+```
+
+## Confirmed cases of COVID-19 in 2020-03-05
+`r table_confirmed`
+
+## Death cases of COVID-19 in 2020-03-05
+`r table_deaths`
+
+## Recovered cases of COVID-19 in 2020-03-05
+`r table_recovered`
+
+## Death Rate (Global)
+
+```{r global, include=T}
+
+table_global_death_rate
+
+```
+
+## Death Rate (China)
+
+```{r china, include=T}
+
+table_china_death_rate
+
+```
+
+## Case (China)
+
+```{r china_summary}
+
+mainland_china_confirmed <- covid_19_confirmed %>%
+  filter(`Country/Region`=="Mainland China") %>%
+  select(-`Province/State`,-`Country/Region`) %>%
+  map_dbl(sum) %>%
+  data.frame()
+
+mainland_china_confirmed <- tibble(time=rownames(mainland_china_confirmed), mainland_china_confirmed$.) %>%
+  rename("mainland_china_confirmed" = `mainland_china_confirmed$.`)
+
+mainland_china_deaths <- covid_19_deaths %>%
+  filter(`Country/Region`=="Mainland China") %>%
+  select(-`Province/State`,-`Country/Region`) %>%
+  map_dbl(sum) %>%
+  data.frame()
+
+mainland_china_deaths <- tibble(time=rownames(mainland_china_deaths), mainland_china_deaths$.) %>%
+  rename("mainland_china_deaths" = `mainland_china_deaths$.`)
+
+mainland_china <- mainland_china_confirmed %>%
+  inner_join(mainland_china_deaths,by = c("time"))
+
+plot_china <- mainland_china %>%
+  ggplot(aes(x=time)) +
+  geom_line(aes(y=mainland_china_confirmed, color="blue", group = 1)) +
+  geom_point(aes(y=mainland_china_confirmed, color="blue")) +
+  geom_line(aes(y=mainland_china_deaths, color="red", group = 1)) +
+  geom_point(aes(y=mainland_china_deaths, color="red")) +
+  ylab("Case") +
+  xlab("Time") +
+  ggtitle("COVID-19 Confirmed Case in China") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 90)) 
+
+```
+
+```{r plot_china, include = T}
+
+plot_china
+
+```
+
+
+## Data Sources:
+1. World Health Organization (WHO): https://www.who.int/
+2. National Health Commission of the People’s Republic of China (NHC): http://www.nhc.gov.cn/xcs/yqtb/list_gzbd.shtml
+3. US CDC: https://www.cdc.gov/coronavirus/2019-ncov/index.html
